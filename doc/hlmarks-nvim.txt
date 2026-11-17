@@ -1,0 +1,321 @@
+*hlmarks.txt     Add functions for mark operations and highlight using a sign.
+
+==============================================================================
+Contents                                                    *hlmarks-contents*
+
+
+1. Configuration ..................................... |hlmarks-configuration|
+  - Options ................................................ |hlmarks-options|
+2. Key Mappings ....................................... |hlmarks-key-mappings|
+3. Lua Module(API) ...................................... |hlmarks-lua-module|
+  - hlmarks .................................................... |hlmarks-api|
+4. Synchronization ................................. |hlmarks-synchronization|
+5. Testing ................................................. |hlmarks-testing|
+
+
+==============================================================================
+1. Configuration                                       *hlmarks-configuration*
+
+
+This plugin can be configured by passing a table of options to the `setup()`
+|hlmarks-api-setup|.
+Available options are listed in the next section.
+
+
+                                                             *hlmarks-options*
+Options ~
+
+
+                                           *hlmarks-opt-buffer_mark-highlight*
+                                             *hlmarks-opt-file_mark-highlight*
+  buffer_mark.highlight.sign_hl ~
+  buffer_mark.highlight.number_hl ~
+  buffer_mark.highlight.line_hl ~
+  file_mark.highlight.sign_hl ~
+  file_mark.highlight.number_hl ~
+  file_mark.highlight.line_hl ~
+
+    Highlight color specs for the sign column, line number column, and the
+    line itself.
+    Refer to |nvim_set_hl()| for color specifications.
+
+    Type: `{ [string]: any }` ~
+
+    Default: ~
+>lua
+        {
+          ctermfg = 255,
+          ctermbg = 39,
+          fg = '#eeeeee',
+          bg = '#00afff',
+          bold = true,
+        },
+<
+
+                                         *hlmarks-opt-buffer_mark-sign_format*
+                                           *hlmarks-opt-file_mark-sign_format*
+  buffer_mark.highlight.sign_format ~
+  file_mark.highlight.sign_format ~
+
+    Format for the sign column.
+    "%m" is replaced by the mark name.
+    The width is a maximum of 2 bytes, including the replaced mark name.
+    If the width is 1 character, it's left-aligned and the remainder is padded
+    with spaces.
+
+    Type: `string` ~
+
+    Default: '%m>' ~
+
+
+                                                        *hlmarks-opt-priority*
+  priority ~
+
+    Priority when overlapping with other signs.
+    This priority setting applies to both buffer-mark and file-mark signs.
+    When they overlap, the order is as follows: "(Highest) Z-Az-a (Lowest)".
+
+    Type: `integer` ~
+
+    Default: 100 ~
+
+
+                                                   *hlmarks-opt-sync_interval*
+  sync_interval ~
+
+    Execution interval for synchronization processes.
+
+    Type: `integer` (ms) ~
+
+    Default: 500 ~
+
+
+                                                     *hlmarks-opt-event_names*
+  event_names ~
+
+    Names of the user event that triggers the execution of the synchronization
+    process.
+
+    Type: `string[]` ~
+
+    Default: {} ~
+
+
+                                                     *hlmarks-opt-desc_header*
+  desc_header ~
+
+    A string that is prepended to the value of the "desc" key when mark
+    commands are overwritten.
+
+    Type: `string` ~
+
+    Default: '[[Hlmarks]]: ' ~
+
+
+==============================================================================
+2. Key Mappings                                         *hlmarks-key-mappings*
+
+
+This plugin does not provide a default keymap, and will have no effect until
+you add your own maps to it. Below is an example:
+>lua
+  -- Set an unused buffer mark.
+  vim.keymap.set('n', '<leader>mm', function()
+    require('hlmarks').set_next_buffer_mark()
+  end)
+
+  -- Set an unused global mark.
+  vim.keymap.set('n', '<leader>mM', function()
+    require('hlmarks').set_next_file_mark()
+  end)
+
+  -- Remove marks at the current line.
+  vim.keymap.set('n', '<leader>ml', function()
+    require('hlmarks').remove_on_line()
+  end)
+
+  -- Remove all marks in the current buffer.
+  vim.keymap.set('n', '<leader>mb', function()
+    require('hlmarks').remove_all()
+  end)
+<
+
+==============================================================================
+3. Lua Module(API)                                        *hlmarks-lua-module*
+
+
+                                                                 *hlmarks-api*
+  Module:hlmarks ~
+>lua
+  local api = require('hlmarks')
+<
+
+                                                           *hlmarks-api-setup*
+  api.setup({options}) ~
+
+    Initializes and configures plugin with the provided {options}.
+
+    Parameters: ~
+      {options} `{ [string]: any }?` See |hlmarks-options|.
+
+
+                                                      *hlmarks-api-remove_all*
+  api.remove_all() ~
+
+    Remove all marks in the current buffer.
+
+
+                                                  *hlmarks-api-remove_on_line*
+  api.remove_on_line() ~
+
+    Remove marks at the current line.
+
+
+                                                        *hlmarks-api-set_mark*
+  api.set_mark({mark}) ~
+
+    Toggle a mark.
+
+    Parameters: ~
+      {mark} `string` The mark name.
+
+
+                                            *hlmarks-api-set_next_buffer_mark*
+  api.set_next_buffer_mark() ~
+
+    Set an unused buffer-mark.
+
+
+                                              *hlmarks-api-set_next_file_mark*
+  api.set_next_file_mark() ~
+
+    Set an unused file-mark.
+
+
+==============================================================================
+4. Synchronization                                   *hlmarks-synchronization*
+
+
+  Handling Changes in Mark and Sign Status ~
+
+    - If a line is inserted or deleted before the line where a mark or sign is
+      set, Neovim automatically adjusts the position of the mark or sign.
+      (no synchronization required)
+    - If the line where a mark or sign is set is deleted, the mark is removed,
+      but the sign remains.
+      (synchronization required)
+    - If a mark itself is removed the corresponding sign remains.
+      (synchronization required)
+
+  Synchronization Overhead ~
+
+    - Synchronization processing for a single buffer is straightforward; since
+      the state of the marks is cached to determine whether changes have
+      occurred, the processing overhead itself is considered low.
+    - Regarding the approach to take when a change is detected, two options
+      were considered. As the execution cost for both is roughly the same, the
+      latter—which is simpler to implement—was chosen:
+      - Extract only the changed marks as differences and update the signature
+        based on them.
+      - Checking each mark currently in use to determine if it has been
+        modified, and updating the signature if any changes are found.
+    - Furthermore, given factors such as the typical number of marks in
+      concurrent use, the number of buffers, the number of simultaneous
+      changes, and the frequency of those changes, it is determined that
+      executing the synchronization process frequently will not cause any
+      issues.
+
+  Handling Multiple Windows Within the Same Tab ~
+
+    - When a single buffer is displayed in multiple windows simultaneously:
+      - Each window simply holds a reference to the same buffer. Since any
+        changes made to a buffer—whether by Neovim or through a
+        synchronization process—are automatically reflected in all windows
+        referencing that same buffer, no additional action is required.
+    - When different buffers are present:
+      - Signs are associated with individual buffers. 
+      - Buffer-marks are also associated with individual buffers; therefore,
+        synchronization only needs to be performed once for the taget buffer. 
+      - File-marks are global; Neovim handles these automatically, so no extra
+        action is needed. However, for signs, synchronization must be
+        performed for all active (i.e., non-hidden) buffers.
+
+  MarkSet Event ~
+
+    - An event specific to Neovim (|MarkSet|).
+    - It is triggered when a mark is added or removed, but not when a mark is
+      updated (e.g., moved); therefore, it is currently unused.
+    - Note that if multiple marks are deleted simultaneously—for instance, via
+      the `delmarks` command—the event is triggered for each individual mark,
+      which could potentially impact performance. However, for the reasons
+      mentioned above, there are no issues with using the event itself.
+
+  Changes Occurring Between Scheduled Synchronization Intervals ~
+
+    - Changes to lines containing marks made by other plugins:
+      - Since running synchronization every 500ms would still cause a delay in
+        updating the signs, this is handled via a custom user event.
+    - Changes resulting from this plugin’s own operations:
+      - Although no issues were observed, synchronization is triggered
+        immediately after such changes as a precaution.
+    - Changes to file-marks across different buffers:
+      - Handled either by triggering synchronization immediately after the
+        change or via an event when switching tabs.
+    - Changes made via commands (such as `delmarks`):
+      - Currently handled by the scheduled synchronization process; however,
+        if issues arise in the future, this will be addressed using the
+        |MarkSet| event.
+
+  TabEnter and BufEnter Events ~
+
+    - Regarding cases where two events overlap:
+      - In some cases, the current buffer may be synchronized twice.
+    - However, since the synchronization process is not computationally
+      intensive for the reasons mentioned as above, such overlaps are
+      considered acceptable.
+    - The TabEnter event covers the following:
+      - Switching tab pages.
+    - The BufEnter event covers the following operations:
+      - Displaying a buffer that was previously in a hidden state.
+      - Switching to a different buffer within the same tab page.
+      - Moving to a buffer—located in a different tab—that is not the current
+        buffer.
+
+  Timing of Synchronization Processing ~
+
+    - After executing each API.
+    - When a specified user event is captured.
+    - When the TabEnter or BufEnter event is captured.
+    - Periodic execution.
+
+
+==============================================================================
+5. Testing                                                   *hlmarks-testing*
+
+
+Install Lua-5.1
+  - Neovim and its plugins explicitly require version 5.1.
+
+Install Mini.test (https://github.com/nvim-mini/mini.test)
+  - As a Neovim plugin.
+  - Also, install the dependent files under the deps directory.
+  - Set the plugin option to treat "specs/*_spec.lua" as a test file.
+
+Writing Test
+  - Use specs/template.lua as a template.
+
+Run Test
+  - On Neovim:
+    - Per file: Run ":lua MiniTest.run_file()" in the buffer for the target
+      test file.
+    - All tests: Run ":lua MiniTest.run()" in any buffer.
+  - On the shell: >shell
+    nvim --headless --noplugin -u ./scripts/minimal_init.lua -c "lua MiniTest.run()"
+<
+  - The working directory of the launched Neovim or the runtime directory of
+    the shell must be the root directory of the plugin project.
+
+
+==============================================================================
+
+vim:tw=78:ts=8:noet:ft=help:norl:
